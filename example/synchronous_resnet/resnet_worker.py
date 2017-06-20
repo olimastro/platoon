@@ -1,5 +1,6 @@
 from __future__ import absolute_import, print_function
 from collections import OrderedDict
+import time
 import six
 from six import iteritems
 from six.moves import range
@@ -29,15 +30,11 @@ def load_data():
     """
     create synthetic data
     """
-    def trgt_reshape(trgt):
-        return trgt.reshape((trgt.shape[0],1))
-
-    targets = numpy.arange(1000)
-    train_targets = trgt_reshape(numpy.repeat(targets, 2))
+    train_targets = numpy.random.randint(1000, size=(2048,1))
     train_data = numpy.random.random((train_targets.shape[0],3,224,224))
-    valid_targets = trgt_reshape(numpy.repeat(targets, 1))
+    valid_targets = numpy.random.randint(1000, size=(1024,1))
     valid_data = numpy.random.random((valid_targets.shape[0],3,224,224))
-    test_targets = trgt_reshape(numpy.repeat(targets, 1))
+    test_targets = numpy.random.randint(1000, size=(1024,1))
     test_data = numpy.random.random((test_targets.shape[0],3,224,224))
 
     rval = ([numpy_floatX(train_data), numpy_int32(train_targets)],
@@ -95,14 +92,6 @@ def sgd(lr, tparams, grads, x, y, cost):
                              broadcastable=infer_bc_pattern(p.get_value().shape))
                for p in tparams]
     gsup = [(gs, g) for gs, g in zip(gshared, grads)]
-    #import ipdb; ipdb.set_trace()
-    #for i, gpair in enumerate(gsup):
-    #    g = gpair[0]
-    #    u = gpair[1]
-    #    if g.broadcastable != u.broadcastable:
-    #        #gsup[i] = (tensor.patternbroadcast(g, u.broadcastable), u)
-    #        u.broadcastable = g.broadcastable
-    #import ipdb; ipdb.set_trace()
 
     # Function that computes gradients for a mini-batch, but do not
     # updates the weights.
@@ -461,13 +450,13 @@ def pred_error(f_pred, data, iterator):
 
 
 def train_resnet(
-    batch_size=12,  # The batch size during training.
-    valid_batch_size=12,  # The batch size used for validation/test set.
+    batch_size=64,  # The batch size during training.
+    valid_batch_size=64,  # The batch size used for validation/test set.
     validFreq=5,
     lrate=1e-4,
     optimizer=sgd,
 ):
-
+    print(theano.config.profile)
     # Each worker needs the same seed in order to draw the same parameters.
     # This will also make them shuffle the batches the same way, but splits are
     # different so doesnt matter
@@ -514,7 +503,7 @@ def train_resnet(
 
     def train_iter():
         while True:
-            kf = get_minibatches_idx(train[0].shape[0], batch_size, shuffle=True)
+            kf = get_minibatches_idx(train[0].shape[0], batch_size, shuffle=False)
             for _, train_index in kf:
                 y = [train[1][t] for t in train_index]
                 x = [train[0][t] for t in train_index]
@@ -523,13 +512,24 @@ def train_resnet(
     train_it = train_iter()
     nb_train = train[0].shape[0] // batch_size
 
+    # first pass in function so it doesnt bias the next time count
+    # because of the dnn flags
+    dummy_x = numpy_floatX(numpy.random.random((batch_size,3,224,224)))
+    dummy_y = numpy_int32(numpy.random.randint(1000, size=(batch_size,1)))
+    dumz = f_grad_shared(dummy_x, dummy_y)
+
     epoch = 0
     while True:
         for i in range(nb_train):
             x, y = next(train_it)
+            func_time = time.time()
             cost = f_grad_shared(x, y)
             f_update(lrate)
+            print("Func call time", time.time() - func_time)
+            overhead_time = time.time()
             asgd()
+            print("Overhead time", time.time() - overhead_time)
+        res = worker.send_req('time')
 
         print('Train cost:', cost)
 
@@ -549,8 +549,8 @@ def train_resnet(
                 # should save the param at best
                 pass
 
-            if res == 'stop':
-                break
+        if res == 'stop':
+            break
         epoch += 1
 
     # Release all shared resources.

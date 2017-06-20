@@ -97,6 +97,10 @@ class ResNetController(Controller):
                 self.test_history_errs += [[None for i in range(self.nb_worker)]]
                 self._epoch += 1
 
+        elif req == 'time':
+            print("Epoch time", time.time() - self.start_time)
+            control_response = 'stop'
+
         elif req == 'splits':
             # the controller never loads the dataset but the worker doesn't
             # know how many workers there are
