@@ -444,7 +444,6 @@ def pred_error(f_pred, data, iterator):
         x = [data[0][t] for t in valid_index]
         y = [data[1][t] for t in valid_index]
         valid_err += f_pred(x, y)
-        f_pred.sync_shared()
         i += 1
 
     return valid_err / i
@@ -525,13 +524,13 @@ def train_resnet(
             x, y = next(train_it)
             func_time = time.time()
             cost = f_grad_shared(x, y)
-            cost.sync_shared()
             f_update(lrate)
-            f_update.sync_shared()
             print("Func call time", time.time() - func_time)
             overhead_time = time.time()
             asgd()
             print("Overhead time", time.time() - overhead_time)
+        f_grad_shared.sync_shared()
+        f_update.sync_shared()
         res = worker.send_req('time')
 
         print('Train cost:', cost)
